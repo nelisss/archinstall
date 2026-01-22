@@ -440,6 +440,32 @@ fi
 arch-chroot /mnt systemctl enable systemd-networkd
 arch-chroot /mnt systemctl enable systemd-resolved
 
+# SSH before root mounting for encrypted partitions
+# This requires a custom .iso with the AUR mkinicpio-systemd-extras package
+if [[ ${encrypt_partitions} == true ]]; then
+    pacstrap -K /mnt mkinitcpio-systemd-extras tinyssh
+    sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
+    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_COMMAND=.*$' > /dev/null ); then
+        echo 'SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"' >> /mnt/etc/mkinitcpio.conf
+    else
+        sed -i -E 's/^SD_TINYSSH_COMMAND=.*$/SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
+    fi
+    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_AUTHORIZED_KEYS=.*$' > /dev/null ); then
+        echo "SD_TINYSSH_AUTHORIZED_KEYS=\"/home/${username}/.ssh/authorized_keys\"" >> /mnt/etc/mkinitcpio.conf
+    else
+        sed -i -E 's/^SD_TINYSSH_COMMAND=.*$/SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
+    fi
+
+    if [[ ${enable_wifi} == true ]]; then
+        pacstrap -K /mnt mkinitcpio-wifi
+        wpa_passphrase "${wifi_name}" "${wifi_password}" > /mnt/etc/wpa_supplicant/initcpio.conf
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-tinyssh sd-encrypt filesystems resume fsck)' /mnt/etc/mkinitpcio.conf
+    else
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-tinyssh sd-encrypt filesystems resume fsck)' /mnt/etc/mkinitpcio.conf
+    fi
+    arch-chroot /mnt mkinitcpio -P
+fi
+
 # GRUB
 arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
@@ -448,10 +474,12 @@ swap_uuid=$( blkid ${swap_partition} -o value | head -1 )
 if [[ ${encrypt_partitions} == true ]]; then
     root_uuid=$( blkid ${root_partition} -o value | head -1 )
     swap_open_uuid=$( blkid /dev/mapper/swap -o value | head -1 )
-    grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} loglevel=3 quiet\""
+    if [[ ${enable_wifi} == true ]]; then
+        grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 ip=:::::wlan0:dhcp loglevel=3 quiet\""
+    else
+        grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 loglevel=3 quiet\""
+    fi
     sed -i -E 's/#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y' /mnt/etc/default/grub
-    sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems resume fsck)' /mnt/etc/mkinitpcio.conf
-    arch-chroot /mnt mkinitcpio -P
 else
     grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=${swap_uuid} loglevel=3 quiet\""
 fi
@@ -486,5 +514,12 @@ arch-chroot /mnt systemctl enable fstrim.timer
 
 # Finish
 umount -R /mnt
-swapoff ${swap_partition}
-reboot
+if [[ ${encrypt_partitions} == true ]]; then
+    cryptsetup close rootfs
+    swapoff /dev/mapper/swap
+    cryptsetup close swap
+else
+    swapoff ${swap_partition}
+fi
+
+echo "All seems to be well, you can reboot and try to enter the system."
