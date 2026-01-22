@@ -1,107 +1,273 @@
 #!/bin/bash
-set -ueo pipefail
+set -eo pipefail
 trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; exit $s' ERR
-
-# Usage: get using curl https://filebrowser.nelisss.net/public/api/raw?hash= > arch_install.sh, chmod +x and execute
 
 # Vars
 packages="base linux linux-firmware vi vim neovim man-db man-pages texinfo iwd reflector sudo grub efibootmgr bash-completion openssh util-linux"
 boot_size=1024
 locale="en_GB.UTF-8" # Without last UTF-8, for example: en_GB.UTF-8
 
-# User input
-echo -n "Hostname: "
-read hostname
-: "${hostname:?"Missing hostname"}"
-
-echo -n "User (will get sudo privileges): "
-read username
-: "${username:?"Missing username"}"
-
-echo -n "User password: "
-read -s password
-echo
-: "${password:?"Missing password"}"
-
-echo -n "Repeat password: "
-read -s password2
-echo
-: "${password2:?"Missing password"}"
-
-if [[ ! ${password} == ${password2} ]]; then
-    echo "Error: passwords do not match." >&2
-    exit 1
+### Import config
+config_path=$1
+if [[ ${config_path} != "" ]]; then
+    if [[ ! -f "${config_path}" ]]; then
+        echo "Error: supplied path to config file does not exist." >&2
+        exit 1
+    fi
+    echo "Using ${config_path} as a config file, skipping input for variables defined there."
+    source "${config_path}"
 fi
 
-echo -n "Timezone: "
-read timezone
-: "${timezone:?"Missing timezone"}"
-if ( ! echo "${timezone}" | grep -P '^[A-Za-z]+\/[A-Za-z]+$' > /dev/null ); then
-    echo "Error: timezone is in the wrong format, should be in IANA format (e.g. Europe/Amsterdam)." >&2
-    exit 1
-fi
+### USER INPUT
 
-echo -n "Wifi (yes/no)?: "
-read enable_wifi
-: "${enable_wifi:?"Missing wifi enable"}"
-if [[ ! ${enable_wifi,,} == "yes" ]] && [[ ! ${enable_wifi,,} == "no" ]]; then
-    echo "Error: input should be \"yes\" or \"no\"." >&2
-    exit 1
-elif [[ ${enable_wifi} == "yes" ]]; then
-    enable_wifi=true
-    echo -n "Wifi name: "
+# hostname
+valid_input=false
+while [[ $valid_input == false ]]; do
+    if [[ ${hostname} == "" ]]; then
+        echo -n "Hostname: "
+        read hostname
+        hostname=${hostname,,}
+    fi
+    if [[ ${hostname} == "" ]]; then
+        echo "Error: please enter a hostname."
+    elif ( echo "${hostname}" | grep -P '[^a-z0-9-\.]' > /dev/null ); then
+        echo "Error: please enter a valid hostname (a-z, 0-9, -, .)." >&2
+        hostname=""
+    elif ( echo "${hostname}" | grep -P '^-.*' > /dev/null ); then
+        echo "Error: please enter a valid hostname (should not start with hyphen)." >&2
+        hostname=""
+    elif ( echo "${hostname}" | grep -P '.*-$' > /dev/null ); then
+        echo "Error: please enter a valid hostname (should not end with hyphen)." >&2
+        hostname=""
+    else
+        valid_input=true
+        echo "Using hostname ${hostname}."
+    fi
+done
 
-    read wifi_name
-    : "${wifi_name:?"Missing wifi network name"}"
+# username
+echo ""
+valid_input=false
+while [[ $valid_input == false ]]; do
+    if [[ ${username} == "" ]]; then
+        echo -n "Username (will get sudo privileges): "
+        read username
+    fi
+    if [[ ${username} == "" ]]; then
+        echo "Error: please enter a username."
+    elif ( echo "${username}" | grep -P '[^a-zA-Z0-9-_\.]' > /dev/null ); then
+        echo "Error: please enter a valid username (a-z, A-Z, 0-9, -, .)." >&2
+        username=""
+    elif ( echo "${username}" | grep -P '^-.*' > /dev/null ); then
+        echo "Error: please enter a valid username (should not start with hyphen)." >&2
+        username=""
+    else
+        valid_input=true
+        echo "Using username ${username}."
+    fi
+done
 
-    echo -n "Wifi password: "
-    read wifi_password
-    : "${wifi_password:?"Missing wifi network password"}"
-else
-    enable_wifi=false
-fi
+# password
+echo ""
+valid_input=false
+while [[ $valid_input == false ]]; do
+    if [[ ${password} == "" ]]; then
+        echo -n "Password for user ${username}: "
+        read -s password
+        echo ""
+        if [[ ${password} == "" ]]; then
+            echo "Please enter a password."
+        else
+            echo -n "Repeat password: "
+            read -s password2
+            echo ""
+            if [[ ! ${password} == ${password2} ]]; then
+                echo "Error: passwords do not match, try again." >&2
+                password=""
+                password2=""
+            else
+                echo "Password registered."
+                valid_input=true
+            fi
+        fi
+    else
+        echo "Password registered."
+        valid_input=true
+    fi
+done
+
+# timezone
+echo ""
+valid_input=false
+while [[ $valid_input == false ]]; do
+    if [[ ${timezone} == "" ]]; then
+        echo -n "Timezone for system: "
+        read timezone
+    fi
+    if [[ ${timezone} == "" ]]; then
+        echo "Error: please enter a timezone." >&2
+    elif ( ! echo "${timezone}" | grep -P '^[A-Za-z]+\/[A-Za-z]+$' > /dev/null ); then
+        echo "Error: please enter a valid timezone in IANA format (e.g. Europe/Paris)." >&2
+        timezone=""
+    elif ( ! timedatectl list-timezones | grep "${timezone}" > /dev/null ); then
+        echo "Error: unknown timezone. See timedatectl list-timezones for valid timezones." >&2
+        timezone=""
+    else
+        valid_input=true
+        echo "Using timezone ${timezone}."
+    fi
+done
+
+# wifi
+echo ""
+valid_input=false
+while [[ $valid_input == false ]]; do
+    if [[ ${enable_wifi} == "" ]]; then
+        echo -n "Wifi (true/false)?: "
+        read enable_wifi
+    fi
+    enable_wifi=${enable_wifi,,}
+    if [[ ! ${enable_wifi} == true ]] && [[ ! ${enable_wifi} == false ]]; then
+        echo "Error: input should be \"true\" or \"false\"." >&2
+        enable_wifi=""
+    elif [[ ${enable_wifi} == true ]]; then
+        if [[ ${wifi_name} == "" ]]; then
+            echo -n "Wifi name: "
+            read wifi_name
+        fi
+        if [[ ${wifi_name} == "" ]]; then
+            echo "Error: please enter a wifi name." >&2
+        else
+            if [[ ${wifi_password} == "" ]]; then
+                echo -n -s "Wifi password: "
+                read wifi_password
+            fi
+            if [[ ${wifi_password} == "" ]]; then
+                echo "Error: please enter a wifi password." >&2
+            else
+                echo "Will attempt to connect to network ${wifi_name}"
+                valid_input=true
+            fi
+        fi
+    else
+        echo "Not using wifi."
+        valid_input=true
+    fi
+done
+
+echo ""
+echo "Currently installed disks:"
+lsblk
 
 disks=$( fdisk -l | grep -oP '(?<=^Disk )\/dev\/[a-z0-9]+(?=:)' )
+echo ""
 echo "Which disk to install on (will erase all data!)?"
+num_disks=$( echo "${disks}" | wc -l )
 iter=1
-while read -r disk; do
-    echo "(${iter}) ${disk}"
+while read -r disk_name; do
+    echo "(${iter}) ${disk_name}"
     iter=$(( ${iter} + 1 ))
 done <<< "${disks}"
-echo -n "Insert number of disk: "
-read disk_number
-: "${disk_number:?"Missing disk number"}"
-disk=$( echo "${disks}" | sed -n "${disk_number}p" )
-echo -n "Format disk ${disk} (yes/no)? "
-read disk_confirm
-: "${disk_confirm:?"Missing wifi enable"}"
-if [[ ! ${disk_confirm,,} == "yes" ]] && [[ ! ${disk_confirm,,} == "no" ]]; then
-    echo "Error: input should be \"yes\" or \"no\"." >&2
-    exit 1
-elif [[ ${disk_confirm,,} == "no" ]]; then
-    echo "Not continuing" >&2
-    exit 1
-fi
 
-echo -n "Intel or amd (intel/amd)?: "
-read intel_amd
-: "${intel_amd:?"Missing intel_amd"}"
-if [[ ! ${intel_amd,,} == "intel" ]] && [[ ! ${intel_amd,,} == "amd" ]]; then
-    echo "Error: input should be \"intel\" or \"amd\"." >&2
-    exit 1
-elif [[ ${intel_amd} == "intel" ]]; then
-    packages="${packages} intel-ucode"
-else
-    packages="${packages} intel-ucode"
-fi
+valid_input=false
+while [[ ${valid_input} == false ]]; do
+    if [[ ${disk} == "" ]]; then
+        echo -n "Insert number of disk: "
+        read disk_number
+        if [[ ${disk_number} == "" ]]; then
+            echo "Error: please enter a disk number." >&2
+        elif ( ! echo "${disk_number}" | grep -P "^[0-${num_disks}]$" > /dev/null ); then
+            echo "Error: invalid input, choose a number from 1 to ${num_disks}." >&2
+        else
+            disk=$( echo "${disks}" | sed -n "${disk_number}p" )
+            echo "Are you sure you want to format disk ${disk}? (yes/no)"
+            read disk_confirm
+            if [[ ! ${disk_confirm,,} == "yes" ]]; then
+                echo "Not formatting ${disk}. Choose another."
+            else
+                echo "Will use ${disk}."
+                valid_input=true
+            fi
+        fi
+    else
+        if ( ! echo "${disks}" | grep -P "^${disk}$" > /dev/null ); then
+            echo "Error: provided disk does not exist." >&2
+        else
+            echo "Are you sure you want to format disk ${disk}? (yes/no)"
+            read disk_confirm
+            if [[ ! ${disk_confirm,,} == "yes" ]]; then
+                echo "Not formatting ${disk}. Choose another."
+            else
+                echo "Will use ${disk}."
+                valid_input=true
+            fi
+        fi
+    fi
+done
 
-echo -n "GitHub user to get SSH keys from: "
-read github_user
-: "${github_user:?"Missing github user"}"
+# intel/amd
+echo ""
+valid_input=false
+while [[ ${valid_input} == false ]]; do
+    if [[ ${intel_amd} == "" ]]; then
+        echo -n "Intel or amd (intel/amd)?: "
+        read intel_amd
+    fi
+    if [[ ! ${intel_amd,,} == "intel" ]] && [[ ! ${intel_amd,,} == "amd" ]]; then
+        echo "Error: please enter \"intel\" or \"amd\"." >&2
+        intel_amd=""
+    elif [[ ${intel_amd,,} == "intel" ]]; then
+        packages="${packages} intel-ucode"
+        valid_input=true
+    else [[ ${intel_amd,,} == "amd" ]]
+        packages="${packages} amd-ucode"
+        valid_input=true
+    fi 
+done
+
+# github keys
+echo ""
+valid_input=false
+while [[ ${valid_input} == false ]]; do
+    if [[ ${github_user} == "" ]]; then
+        echo -n "GitHub user to get SSH keys from (empty for none): "
+        read github_user
+    fi
+    if [[ ${github_user} == "" ]]; then
+        import_github=false
+        echo "Not importing GitHub SSH keys."
+        valid_input=true
+    elif ( curl --silent https://api.github.com/users/${github_user} | grep 'Not Found' > /dev/null ); then
+        echo "Error: GitHub user does not exist." >&2
+        github_user=""
+    else
+        import_github=true
+        echo "Will import keys from ${github_user}"
+        valid_input=true
+    fi
+done
+
+### env to file
+echo ""
+echo "Saving settings to ./archinstall.env, can be used in subsequent runs if an error is encountered by running \"archinstall.sh archinstall.env\"."
+cat <<EOF > archinstall.env
+hostname=${hostname}
+username=${username}
+password=${password}
+timezone=${timezone}
+enable_wifi=${enable_wifi}
+wifi_name=${wifi_name}
+wifi_password=${wifi_password}
+disk=${disk}
+intel_amd=${intel_amd}
+github_user=${github_user}
+EOF
 
 # Logging
-exec 1> >(tee "stdout.log")
-exec 2> >(tee "stderr.log")
+echo ""
+echo "Logging to ./archinstall_stdout.log and ./archinstall_stderr.log"
+exec 1> >(tee "archinstall_stdout.log")
+exec 2> >(tee "archinstall_stderr.log")
 
 loadkeys us
 
@@ -114,139 +280,139 @@ if [[ ${enable_wifi} == true ]]; then
     iwctl --passphrase="${wifi_password}" station ${wifi_interface} connect "${wifi_name}"
 fi
 
-if ( ! ping -c 1 google.com > /dev/null ); then
-    echo "Error: could not ping google.com." >&2
-    exit 1
-fi
+while ( ! ping -c 1 google.com > /dev/null ); do
+    echo "Error: could not ping google.com, retrying in 5 seconds." >&2
+    sleep 5
+done
 
-# Timezone
-timedatectl set-timezone ${timezone}
-timedatectl set-local-rtc 0
-timedatectl set-ntp true
-
-# Partitions
-total_memory=$( free --mebi | grep -oP "(?<=^Mem:)\s+\d+" | sed 's/\s//g' )
-swap_end=$(( ${total_memory} + ${boot_size} + 1))MiB
-parted --script ${disk} -- mklabel gpt \
-    mkpart ESP fat32 1MiB ${boot_size}MiB \
-    set 1 boot on \
-    mkpart primary linux-swap ${boot_size}MiB ${swap_end}MiB \
-    mkpart primary ext4 ${swap_end} 100%
-
-efi_partition="$(ls ${disk}* | grep -E "^${disk}p?1$")"
-swap_partition="$(ls ${disk}* | grep -E "^${disk}p?2$")"
-root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
-
-mkfs.fat -F 32 ${efi_partition}
-mkswap ${swap_partition}
-mkfs.ext4 ${root_partition}
-
-# Mounts
-mount ${root_partition} /mnt
-mount --mkdir ${efi_partition} /mnt/boot
-swapon ${swap_partition}
-
-# Packages
-systemctl start reflector.service
-pacstrap -K /mnt ${packages}
-
-# Fstab
-genfstab -U /mnt >> /mnt/etc/fstab
-
-# Timezone
-arch-chroot /mnt ln -sf /usr/share/zoneinfo/${timezone} /etc/localtime
-
-# Locales
-cat /mnt/etc/locale.gen | sed "s/#${locale}/${locale}/" > /mnt/etc/locale.gen
-arch-chroot /mnt locale-gen
-echo "LANG=${locale}" > /mnt/etc/local.conf
-
-# Network
-ethernet_interface=$( ip link | grep -oP '(?<=^\d: )[a-z0-9]+(?=:)' | grep -oP '^e[a-z]*\d+$' )
-arch-chroot /mnt ip link set ${ethernet_interface} up
-cat <<EOF > /mnt/etc/systemd/network/20-wired.network
-[Match]
-Name=en*
-Name=eth*
-
-[Link]
-RequiredForOnline=$( if [[ ${enable_wifi} == true ]]; then echo "no"; else echo "routable"; fi )
-
-[Network]
-DNS=1.1.1.1
-DHCP=yes
-MulticastDNS=no
-
-[DHCPv4]
-RouteMetric=100
-
-[IPv6AcceptRA]
-RouteMetric=100
-EOF
-
-if [[ ${enable_wifi} == true ]]; then
-    arch-chroot /mnt systemctl enable rfkill-unblock@all.service
-    arch-chroot /mnt ip link set ${wifi_interface} up
-    arch-chroot /mnt iwctl station ${wifi_interface} scan
-    arch-chroot /mnt iwctl --passphrase="${wifi_password}" station ${wifi_interface} connect "${wifi_name}"
-    cat <<EOF > /mnt/etc/systemd/network/20-wireless.network
-[Match]
-Name=wl*
-
-[Link]
-RequiredForOnline=routable
-
-[Network]
-DNS=1.1.1.1
-DHCP=yes
-MulticastDNS=no
-
-[DHCPv4]
-RouteMetric=600
-
-[IPv6AcceptRA]
-RouteMetric=600
-EOF
-    arch-chroot /mnt systemctl enable iwd
-fi
-arch-chroot /mnt systemctl enable systemd-networkd
-arch-chroot /mnt systemctl enable systemd-resolved
-
-# GRUB
-arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
-swap_uuid=$( lsblk -f | grep swap | grep -oP '[a-z0-9]+-[a-z0-9-]+-[a-z0-9-]+' )
-grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=$swap_uuid loglevel=3 quiet\""
-sed -i -E "s/GRUB_CMDLINE_LINUX_DEFAULT=.*/${grub_uuid_line}/" /mnt/etc/default/grub
-arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
-echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
-cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
-#    Path                   Mode UID  GID  Age Argument
-w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
-EOF
-
-# Hostname
-echo ${hostname} > /etc/hostname
-
-# User
-arch-chroot /mnt useradd -m ${username}
-arch-chroot /mnt groupadd sudo
-echo "${username}:${password}" | chpasswd --root /mnt
-echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
-arch-chroot /mnt usermod -a -G sudo ${username}
-arch-chroot /mnt passwd --lock root
-
-# SSH
-arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
-curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
-arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
-arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
-arch-chroot /mnt systemctl enable sshd
-
-# SSD
-arch-chroot /mnt systemctl enable fstrim.timer
-
-# Finish
-umount -R /mnt
-swapoff ${swap_partition}
-reboot
+## Timezone
+#timedatectl set-timezone ${timezone}
+#timedatectl set-local-rtc 0
+#timedatectl set-ntp true
+#
+## Partitions
+#total_memory=$( free --mebi | grep -oP "(?<=^Mem:)\s+\d+" | sed 's/\s//g' )
+#swap_end=$(( ${total_memory} + ${boot_size} + 1))MiB
+#parted --script ${disk} -- mklabel gpt \
+#    mkpart ESP fat32 1MiB ${boot_size}MiB \
+#    set 1 boot on \
+#    mkpart primary linux-swap ${boot_size}MiB ${swap_end}MiB \
+#    mkpart primary ext4 ${swap_end} 100%
+#
+#efi_partition="$(ls ${disk}* | grep -E "^${disk}p?1$")"
+#swap_partition="$(ls ${disk}* | grep -E "^${disk}p?2$")"
+#root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
+#
+#mkfs.fat -F 32 ${efi_partition}
+#mkswap ${swap_partition}
+#mkfs.ext4 ${root_partition}
+#
+## Mounts
+#mount ${root_partition} /mnt
+#mount --mkdir ${efi_partition} /mnt/boot
+#swapon ${swap_partition}
+#
+## Packages
+#systemctl start reflector.service
+#pacstrap -K /mnt ${packages}
+#
+## Fstab
+#genfstab -U /mnt >> /mnt/etc/fstab
+#
+## Timezone
+#arch-chroot /mnt ln -sf /usr/share/zoneinfo/${timezone} /etc/localtime
+#
+## Locales
+#cat /mnt/etc/locale.gen | sed "s/#${locale}/${locale}/" > /mnt/etc/locale.gen
+#arch-chroot /mnt locale-gen
+#echo "LANG=${locale}" > /mnt/etc/local.conf
+#
+## Network
+#ethernet_interface=$( ip link | grep -oP '(?<=^\d: )[a-z0-9]+(?=:)' | grep -oP '^e[a-z]*\d+$' )
+#arch-chroot /mnt ip link set ${ethernet_interface} up
+#cat <<EOF > /mnt/etc/systemd/network/20-wired.network
+#[Match]
+#Name=en*
+#Name=eth*
+#
+#[Link]
+#RequiredForOnline=$( if [[ ${enable_wifi} == true ]]; then echo "no"; else echo "routable"; fi )
+#
+#[Network]
+#DNS=1.1.1.1
+#DHCP=yes
+#MulticastDNS=no
+#
+#[DHCPv4]
+#RouteMetric=100
+#
+#[IPv6AcceptRA]
+#RouteMetric=100
+#EOF
+#
+#if [[ ${enable_wifi} == true ]]; then
+#    arch-chroot /mnt systemctl enable rfkill-unblock@all.service
+#    arch-chroot /mnt ip link set ${wifi_interface} up
+#    arch-chroot /mnt iwctl station ${wifi_interface} scan
+#    arch-chroot /mnt iwctl --passphrase="${wifi_password}" station ${wifi_interface} connect "${wifi_name}"
+#    cat <<EOF > /mnt/etc/systemd/network/20-wireless.network
+#[Match]
+#Name=wl*
+#
+#[Link]
+#RequiredForOnline=routable
+#
+#[Network]
+#DNS=1.1.1.1
+#DHCP=yes
+#MulticastDNS=no
+#
+#[DHCPv4]
+#RouteMetric=600
+#
+#[IPv6AcceptRA]
+#RouteMetric=600
+#EOF
+#    arch-chroot /mnt systemctl enable iwd
+#fi
+#arch-chroot /mnt systemctl enable systemd-networkd
+#arch-chroot /mnt systemctl enable systemd-resolved
+#
+## GRUB
+#arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+#sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
+#swap_uuid=$( lsblk -f | grep swap | grep -oP '[a-z0-9]+-[a-z0-9-]+-[a-z0-9-]+' )
+#grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=$swap_uuid loglevel=3 quiet\""
+#sed -i -E "s/GRUB_CMDLINE_LINUX_DEFAULT=.*/${grub_uuid_line}/" /mnt/etc/default/grub
+#arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+#echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
+#cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
+##    Path                   Mode UID  GID  Age Argument
+#w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
+#EOF
+#
+## Hostname
+#echo ${hostname} > /etc/hostname
+#
+## User
+#arch-chroot /mnt useradd -m ${username}
+#arch-chroot /mnt groupadd sudo
+#echo "${username}:${password}" | chpasswd --root /mnt
+#echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
+#arch-chroot /mnt usermod -a -G sudo ${username}
+#arch-chroot /mnt passwd --lock root
+#
+## SSH
+#arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
+#curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
+#arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
+#arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
+#arch-chroot /mnt systemctl enable sshd
+#
+## SSD
+#arch-chroot /mnt systemctl enable fstrim.timer
+#
+## Finish
+#umount -R /mnt
+#swapoff ${swap_partition}
+#reboot
