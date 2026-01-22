@@ -76,7 +76,7 @@ while [[ $valid_input == false ]]; do
         read -s password
         echo ""
         if [[ ${password} == "" ]]; then
-            echo "Please enter a password."
+            echo "Please enter a password." >&2
         else
             echo -n "Repeat password: "
             read -s password2
@@ -180,7 +180,7 @@ while [[ ${valid_input} == false ]]; do
             echo "Error: invalid input, choose a number from 1 to ${num_disks}." >&2
         else
             disk=$( echo "${disks}" | sed -n "${disk_number}p" )
-            echo "Are you sure you want to format disk ${disk}? (yes/no)"
+            echo -n "Are you sure you want to format disk ${disk} (yes/no)? "
             read disk_confirm
             if [[ ! ${disk_confirm,,} == "yes" ]]; then
                 echo "Not formatting ${disk}. Choose another."
@@ -193,15 +193,57 @@ while [[ ${valid_input} == false ]]; do
         if ( ! echo "${disks}" | grep -P "^${disk}$" > /dev/null ); then
             echo "Error: provided disk does not exist." >&2
         else
-            echo "Are you sure you want to format disk ${disk}? (yes/no)"
+            echo -n "Are you sure you want to format disk ${disk} (yes/no)? "
             read disk_confirm
             if [[ ! ${disk_confirm,,} == "yes" ]]; then
                 echo "Not formatting ${disk}. Choose another."
+                disk=""
             else
                 echo "Will use ${disk}."
                 valid_input=true
             fi
         fi
+    fi
+done
+
+# encryption
+echo ""
+valid_input=false
+while [[ ${valid_input} == false ]]; do
+    if [[ ${encrypt_partitions} == "" ]]; then
+        echo -n "Encrypt root and swap partitions (true/false)? "
+        read encrypt_partitions
+    fi
+    encrypt_partitions=${encrypt_partitions,,}
+    if [[ ! ${encrypt_partitions} == true ]] && [[ ! ${encrypt_partitions} == false ]]; then
+        echo "Error: input should be \"true\" or \"false\"." >&2
+    elif [[ ${encrypt_partitions} == true ]]; then
+        if [[ ${encryption_password} == "" ]]; then
+            echo -n "Encryption password to use: "
+            read -s encryption_password
+            echo ""
+            if [[ ${encryption_password} == "" ]]; then
+                echo "Please enter an encryption password." >&2
+            else
+                echo -n "Repeat encryption password: "
+                read -s encryption_password2
+                echo ""
+                if [[ ! ${encryption_password} == ${encryption_password2} ]]; then
+                    echo "Error: encryption passwords do not match, try again." >&2
+                    encryption_password=""
+                    encryption_password2=""
+                else
+                    echo "Encryption password registered."
+                    valid_input=true
+                fi
+            fi
+        else
+            echo "Encryption password registered."
+            valid_input=true
+        fi
+    else
+        echo "Not encrypting partitions."
+        valid_input=true
     fi
 done
 
@@ -217,9 +259,11 @@ while [[ ${valid_input} == false ]]; do
         echo "Error: please enter \"intel\" or \"amd\"." >&2
         intel_amd=""
     elif [[ ${intel_amd,,} == "intel" ]]; then
+        echo "Using intel-ucode."
         packages="${packages} intel-ucode"
         valid_input=true
     else [[ ${intel_amd,,} == "amd" ]]
+        echo "Using amd-ucode."
         packages="${packages} amd-ucode"
         valid_input=true
     fi 
@@ -242,7 +286,7 @@ while [[ ${valid_input} == false ]]; do
         github_user=""
     else
         import_github=true
-        echo "Will import keys from ${github_user}"
+        echo "Will import keys from GitHub user ${github_user}."
         valid_input=true
     fi
 done
@@ -259,6 +303,8 @@ enable_wifi=${enable_wifi}
 wifi_name=${wifi_name}
 wifi_password=${wifi_password}
 disk=${disk}
+encrypt_partitions=${encrypt_partitions}
+encryption_password=${encryption_password}
 intel_amd=${intel_amd}
 github_user=${github_user}
 EOF
@@ -285,134 +331,160 @@ while ( ! ping -c 1 google.com > /dev/null ); do
     sleep 5
 done
 
-## Timezone
-#timedatectl set-timezone ${timezone}
-#timedatectl set-local-rtc 0
-#timedatectl set-ntp true
-#
-## Partitions
-#total_memory=$( free --mebi | grep -oP "(?<=^Mem:)\s+\d+" | sed 's/\s//g' )
-#swap_end=$(( ${total_memory} + ${boot_size} + 1))MiB
-#parted --script ${disk} -- mklabel gpt \
-#    mkpart ESP fat32 1MiB ${boot_size}MiB \
-#    set 1 boot on \
-#    mkpart primary linux-swap ${boot_size}MiB ${swap_end}MiB \
-#    mkpart primary ext4 ${swap_end} 100%
-#
-#efi_partition="$(ls ${disk}* | grep -E "^${disk}p?1$")"
-#swap_partition="$(ls ${disk}* | grep -E "^${disk}p?2$")"
-#root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
-#
-#mkfs.fat -F 32 ${efi_partition}
-#mkswap ${swap_partition}
-#mkfs.ext4 ${root_partition}
-#
-## Mounts
-#mount ${root_partition} /mnt
-#mount --mkdir ${efi_partition} /mnt/boot
-#swapon ${swap_partition}
-#
-## Packages
-#systemctl start reflector.service
-#pacstrap -K /mnt ${packages}
-#
-## Fstab
-#genfstab -U /mnt >> /mnt/etc/fstab
-#
-## Timezone
-#arch-chroot /mnt ln -sf /usr/share/zoneinfo/${timezone} /etc/localtime
-#
-## Locales
-#cat /mnt/etc/locale.gen | sed "s/#${locale}/${locale}/" > /mnt/etc/locale.gen
-#arch-chroot /mnt locale-gen
-#echo "LANG=${locale}" > /mnt/etc/local.conf
-#
-## Network
-#ethernet_interface=$( ip link | grep -oP '(?<=^\d: )[a-z0-9]+(?=:)' | grep -oP '^e[a-z]*\d+$' )
-#arch-chroot /mnt ip link set ${ethernet_interface} up
-#cat <<EOF > /mnt/etc/systemd/network/20-wired.network
-#[Match]
-#Name=en*
-#Name=eth*
-#
-#[Link]
-#RequiredForOnline=$( if [[ ${enable_wifi} == true ]]; then echo "no"; else echo "routable"; fi )
-#
-#[Network]
-#DNS=1.1.1.1
-#DHCP=yes
-#MulticastDNS=no
-#
-#[DHCPv4]
-#RouteMetric=100
-#
-#[IPv6AcceptRA]
-#RouteMetric=100
-#EOF
-#
-#if [[ ${enable_wifi} == true ]]; then
-#    arch-chroot /mnt systemctl enable rfkill-unblock@all.service
-#    arch-chroot /mnt ip link set ${wifi_interface} up
-#    arch-chroot /mnt iwctl station ${wifi_interface} scan
-#    arch-chroot /mnt iwctl --passphrase="${wifi_password}" station ${wifi_interface} connect "${wifi_name}"
-#    cat <<EOF > /mnt/etc/systemd/network/20-wireless.network
-#[Match]
-#Name=wl*
-#
-#[Link]
-#RequiredForOnline=routable
-#
-#[Network]
-#DNS=1.1.1.1
-#DHCP=yes
-#MulticastDNS=no
-#
-#[DHCPv4]
-#RouteMetric=600
-#
-#[IPv6AcceptRA]
-#RouteMetric=600
-#EOF
-#    arch-chroot /mnt systemctl enable iwd
-#fi
-#arch-chroot /mnt systemctl enable systemd-networkd
-#arch-chroot /mnt systemctl enable systemd-resolved
-#
-## GRUB
-#arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-#sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
-#swap_uuid=$( lsblk -f | grep swap | grep -oP '[a-z0-9]+-[a-z0-9-]+-[a-z0-9-]+' )
-#grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=$swap_uuid loglevel=3 quiet\""
-#sed -i -E "s/GRUB_CMDLINE_LINUX_DEFAULT=.*/${grub_uuid_line}/" /mnt/etc/default/grub
-#arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
-#echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
-#cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
-##    Path                   Mode UID  GID  Age Argument
-#w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
-#EOF
-#
-## Hostname
-#echo ${hostname} > /etc/hostname
-#
-## User
-#arch-chroot /mnt useradd -m ${username}
-#arch-chroot /mnt groupadd sudo
-#echo "${username}:${password}" | chpasswd --root /mnt
-#echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
-#arch-chroot /mnt usermod -a -G sudo ${username}
-#arch-chroot /mnt passwd --lock root
-#
-## SSH
-#arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
-#curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
-#arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
-#arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
-#arch-chroot /mnt systemctl enable sshd
-#
-## SSD
-#arch-chroot /mnt systemctl enable fstrim.timer
-#
-## Finish
-#umount -R /mnt
-#swapoff ${swap_partition}
-#reboot
+# Timezone
+timedatectl set-timezone ${timezone}
+timedatectl set-local-rtc 0
+timedatectl set-ntp true
+
+# Partitions
+total_memory=$( free --mebi | grep -oP "(?<=^Mem:)\s+\d+" | sed 's/\s//g' )
+swap_end=$(( ${total_memory} + ${boot_size} + 1))MiB
+parted --script ${disk} -- mklabel gpt \
+    mkpart ESP fat32 1MiB ${boot_size}MiB \
+    set 1 boot on \
+    mkpart primary linux-swap ${boot_size}MiB ${swap_end}MiB \
+    mkpart primary ext4 ${swap_end} 100%
+
+efi_partition="$(ls ${disk}* | grep -E "^${disk}p?1$")"
+swap_partition="$(ls ${disk}* | grep -E "^${disk}p?2$")"
+root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
+
+mkfs.fat -F 32 ${efi_partition}
+if [[ ${encrypt_partitions} == true ]]; then
+    echo "${encryption_password}" | cryptsetup luksFormat --label swap ${swap_partition} -
+    echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/swap swap -
+    mkswap /dev/mapper/swap
+
+    echo "${encryption_password}" | cryptsetup luksFormat --label root ${root_partition} -
+    echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/root rootfs -
+    mkfs.ext4 /dev/mapper/rootfs
+
+    mount /dev/mapper/rootfs /mnt
+    mount --mkdir ${efi_partition} /mnt/boot
+    swapon /dev/mapper/swap
+else
+    mkswap ${swap_partition}
+    mkfs.ext4 ${root_partition}
+
+    mount ${root_partition} /mnt
+    mount --mkdir ${efi_partition} /mnt/boot
+    swapon ${swap_partition}
+fi
+
+# Packages
+systemctl start reflector.service
+pacstrap -K /mnt ${packages}
+
+# Fstab
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# Timezone
+arch-chroot /mnt ln -sf /usr/share/zoneinfo/${timezone} /etc/localtime
+arch-chroot /mnt timedatectl set-timezone ${timezone}
+arch-chroot /mnt timedatectl set-local-rtc 0
+arch-chroot /mnt timedatectl set-ntp true
+
+# Locales
+sed -i -E "s/#${locale}/${locale}/" /mnt/etc/locale.gen
+arch-chroot /mnt locale-gen
+echo "LANG=${locale}" > /mnt/etc/local.conf
+
+# Network
+ethernet_interface=$( ip link | grep -oP '(?<=^\d: )[a-z0-9]+(?=:)' | grep -oP '^e[a-z]*\d+$' )
+arch-chroot /mnt ip link set ${ethernet_interface} up
+cat <<EOF > /mnt/etc/systemd/network/20-wired.network
+[Match]
+Name=en*
+Name=eth*
+
+[Link]
+RequiredForOnline=$( if [[ ${enable_wifi} == true ]]; then echo "no"; else echo "routable"; fi )
+
+[Network]
+DNS=1.1.1.1
+DHCP=yes
+MulticastDNS=no
+
+[DHCPv4]
+RouteMetric=100
+
+[IPv6AcceptRA]
+RouteMetric=100
+EOF
+
+if [[ ${enable_wifi} == true ]]; then
+    arch-chroot /mnt systemctl enable rfkill-unblock@all.service
+    arch-chroot /mnt ip link set ${wifi_interface} up
+    arch-chroot /mnt iwctl station ${wifi_interface} scan
+    arch-chroot /mnt iwctl --passphrase="${wifi_password}" station ${wifi_interface} connect "${wifi_name}"
+    cat <<EOF > /mnt/etc/systemd/network/20-wireless.network
+[Match]
+Name=wl*
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DNS=1.1.1.1
+DHCP=yes
+MulticastDNS=no
+
+[DHCPv4]
+RouteMetric=600
+
+[IPv6AcceptRA]
+RouteMetric=600
+EOF
+    arch-chroot /mnt systemctl enable iwd
+fi
+arch-chroot /mnt systemctl enable systemd-networkd
+arch-chroot /mnt systemctl enable systemd-resolved
+
+# GRUB
+arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
+
+swap_uuid=$( blkid ${swap_partition} -o value | head -1 )
+if [[ ${encrypt_partitions} == true ]]; then
+    root_uuid=$( blkid ${root_partition} -o value | head -1 )
+    swap_open_uuid=$( blkid /dev/mapper/swap -o value | head -1 )
+    grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} loglevel=3 quiet\""
+    sed -i -E 's/#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y' /mnt/etc/default/grub
+    sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems resume fsck)' /mnt/etc/mkinitpcio.conf
+    arch-chroot /mnt mkinitcpio -P
+else
+    grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=${swap_uuid} loglevel=3 quiet\""
+fi
+sed -i -E "s/GRUB_CMDLINE_LINUX_DEFAULT=.*/${grub_uuid_line}/" /mnt/etc/default/grub
+arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
+cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
+#    Path                   Mode UID  GID  Age Argument
+w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
+EOF
+
+# Hostname
+echo ${hostname} > /etc/hostname
+
+# User
+arch-chroot /mnt useradd -m ${username}
+arch-chroot /mnt groupadd sudo
+echo "${username}:${password}" | chpasswd --root /mnt
+echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
+arch-chroot /mnt usermod -a -G sudo ${username}
+arch-chroot /mnt passwd --lock root
+
+# SSH
+arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
+curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
+arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
+arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
+arch-chroot /mnt systemctl enable sshd
+
+# SSD
+arch-chroot /mnt systemctl enable fstrim.timer
+
+# Finish
+umount -R /mnt
+swapoff ${swap_partition}
+reboot
