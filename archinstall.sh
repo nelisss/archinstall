@@ -461,6 +461,7 @@ arch-chroot /mnt systemctl enable sshd
 # SSH before root mounting for encrypted partitions
 # This requires a custom .iso with the AUR mkinicpio-systemd-extras package
 if [[ ${encrypt_partitions} == true ]]; then
+    arch-chroot /mnt ssh-keygen -A
     pacstrap -K /mnt mkinitcpio-systemd-extras tinyssh
     #sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
     if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_COMMAND=.*$' > /dev/null ); then
