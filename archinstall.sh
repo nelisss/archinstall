@@ -139,8 +139,8 @@ while [[ $valid_input == false ]]; do
             echo "Error: please enter a wifi name." >&2
         else
             if [[ ${wifi_password} == "" ]]; then
-                echo -n -s "Wifi password: "
-                read wifi_password
+                echo -n "Wifi password: "
+                read -s wifi_password
             fi
             if [[ ${wifi_password} == "" ]]; then
                 echo "Error: please enter a wifi password." >&2
