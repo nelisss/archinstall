@@ -295,18 +295,18 @@ done
 echo ""
 echo "Saving settings to ./archinstall.env, can be used in subsequent runs if an error is encountered by running \"archinstall.sh archinstall.env\"."
 cat <<EOF > archinstall.env
-hostname=${hostname}
-username=${username}
-password=${password}
-timezone=${timezone}
-enable_wifi=${enable_wifi}
-wifi_name=${wifi_name}
-wifi_password=${wifi_password}
-disk=${disk}
-encrypt_partitions=${encrypt_partitions}
-encryption_password=${encryption_password}
-intel_amd=${intel_amd}
-github_user=${github_user}
+hostname="${hostname}"
+username="${username}"
+password="${password}"
+timezone="${timezone}"
+enable_wifi="${enable_wifi}"
+wifi_name="${wifi_name}"
+wifi_password="${wifi_password}"
+disk="${disk}"
+encrypt_partitions="${encrypt_partitions}"
+encryption_password="${encryption_password}"
+intel_amd="${intel_amd}"
+github_user="${github_user}"
 EOF
 
 # Logging
@@ -351,12 +351,12 @@ root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
 
 mkfs.fat -F 32 ${efi_partition}
 if [[ ${encrypt_partitions} == true ]]; then
-    echo "${encryption_password}" | cryptsetup luksFormat --label swap --type luks1 ${swap_partition} -
-    echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/swap swap -
+    cryptsetup luksFormat --type luks1 ${swap_partition} <<< "${encryption_password}"
+    cryptsetup open ${swap_partition} swap <<< "${encryption_password}"
     mkswap /dev/mapper/swap
 
-    echo "${encryption_password}" | cryptsetup luksFormat --label root --type luks1 ${root_partition} -
-    echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/root rootfs -
+    cryptsetup luksFormat --type luks1 ${root_partition} <<< "${encryption_password}"
+    cryptsetup open ${root_partition} rootfs <<< "${encryption_password}"
     mkfs.ext4 /dev/mapper/rootfs
 
     mount /dev/mapper/rootfs /mnt
