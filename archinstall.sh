@@ -505,6 +505,7 @@ else
 fi
 sed -i -E "s/GRUB_CMDLINE_LINUX_DEFAULT=.*/${grub_uuid_line}/" /mnt/etc/default/grub
 arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+mkdir -p /mnt/sys/module/hibernate/parameters
 echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
 cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
 #    Path                   Mode UID  GID  Age Argument
