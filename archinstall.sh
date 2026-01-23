@@ -440,11 +440,29 @@ fi
 arch-chroot /mnt systemctl enable systemd-networkd
 arch-chroot /mnt systemctl enable systemd-resolved
 
+# Hostname
+echo ${hostname} > /etc/hostname
+
+# User
+arch-chroot /mnt useradd -m ${username}
+arch-chroot /mnt groupadd sudo
+echo "${username}:${password}" | chpasswd --root /mnt
+echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
+arch-chroot /mnt usermod -a -G sudo ${username}
+arch-chroot /mnt passwd --lock root
+
+# SSH
+arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
+curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
+arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
+arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
+arch-chroot /mnt systemctl enable sshd
+
 # SSH before root mounting for encrypted partitions
 # This requires a custom .iso with the AUR mkinicpio-systemd-extras package
 if [[ ${encrypt_partitions} == true ]]; then
     pacstrap -K /mnt mkinitcpio-systemd-extras tinyssh
-    sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
+    #sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
     if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_COMMAND=.*$' > /dev/null ); then
         echo 'SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"' >> /mnt/etc/mkinitcpio.conf
     else
@@ -457,12 +475,13 @@ if [[ ${encrypt_partitions} == true ]]; then
     fi
 
     if [[ ${enable_wifi} == true ]]; then
-        pacstrap -K /mnt mkinitcpio-wifi
+        pacstrap -K /mnt mkinitcpio-wifi broadcom-wl
         wpa_passphrase "${wifi_name}" "${wifi_password}" > /mnt/etc/wpa_supplicant/initcpio.conf
         sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     else
         sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     fi
+    echo "KEYMAP=us" > /mnt/etc/vconsole.conf
     arch-chroot /mnt mkinitcpio -P
 fi
 
@@ -490,24 +509,6 @@ cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
 #    Path                   Mode UID  GID  Age Argument
 w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
 EOF
-
-# Hostname
-echo ${hostname} > /etc/hostname
-
-# User
-arch-chroot /mnt useradd -m ${username}
-arch-chroot /mnt groupadd sudo
-echo "${username}:${password}" | chpasswd --root /mnt
-echo "%sudo  ALL=(ALL:ALL) ALL" >> /mnt/etc/sudoers
-arch-chroot /mnt usermod -a -G sudo ${username}
-arch-chroot /mnt passwd --lock root
-
-# SSH
-arch-chroot -u ${username} /mnt ssh-keygen -t ed25519 -f /home/${username}/.ssh/id_ed25519 -N "" -q
-curl https://github.com/${github_user}.keys >> /mnt/home/${username}/.ssh/authorized_keys
-arch-chroot /mnt chown ${username}:${username} /home/${username}/.ssh/authorized_keys
-arch-chroot /mnt chmod 600 /home/${username}/.ssh/authorized_keys
-arch-chroot /mnt systemctl enable sshd
 
 # SSD
 arch-chroot /mnt systemctl enable fstrim.timer
