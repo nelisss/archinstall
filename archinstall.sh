@@ -509,7 +509,7 @@ mkdir -p /mnt/sys/module/hibernate/parameters
 echo "lz4" > /mnt/sys/module/hibernate/parameters/compressor
 cat <<EOF > /mnt/etc/tmpfiles.d/hibernation_image_size.conf
 #    Path                   Mode UID  GID  Age Argument
-w    /sys/power/image_size  -    -    -    -   $(( ${total_memory} * 1048576 ))
+w    /sys/power/image_size  -    -    -    -   $(( total_memory * 1048576 ))
 EOF
 
 # SSD
