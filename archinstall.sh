@@ -459,9 +459,9 @@ if [[ ${encrypt_partitions} == true ]]; then
     if [[ ${enable_wifi} == true ]]; then
         pacstrap -K /mnt mkinitcpio-wifi
         wpa_passphrase "${wifi_name}" "${wifi_password}" > /mnt/etc/wpa_supplicant/initcpio.conf
-        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitpcio.conf
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     else
-        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitpcio.conf
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     fi
     arch-chroot /mnt mkinitcpio -P
 fi
