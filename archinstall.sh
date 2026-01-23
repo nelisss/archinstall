@@ -351,11 +351,11 @@ root_partition="$(ls ${disk}* | grep -E "^${disk}p?3$")"
 
 mkfs.fat -F 32 ${efi_partition}
 if [[ ${encrypt_partitions} == true ]]; then
-    echo "${encryption_password}" | cryptsetup luksFormat --label swap ${swap_partition} -
+    echo "${encryption_password}" | cryptsetup luksFormat --label swap --type luks1 ${swap_partition} -
     echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/swap swap -
     mkswap /dev/mapper/swap
 
-    echo "${encryption_password}" | cryptsetup luksFormat --label root ${root_partition} -
+    echo "${encryption_password}" | cryptsetup luksFormat --label root --type luks1 ${root_partition} -
     echo "${encryption_password}" | cryptsetup open /dev/disk/by-label/root rootfs -
     mkfs.ext4 /dev/mapper/rootfs
 
