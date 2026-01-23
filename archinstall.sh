@@ -468,7 +468,7 @@ fi
 
 # GRUB
 arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0' /mnt/etc/default/grub
+sed -i -E 's/GRUB_TIMEOUT=[0-9]+/GRUB_TIMEOUT=0/' /mnt/etc/default/grub
 
 swap_uuid=$( blkid ${swap_partition} -o value | head -1 )
 if [[ ${encrypt_partitions} == true ]]; then
@@ -479,7 +479,7 @@ if [[ ${encrypt_partitions} == true ]]; then
     else
         grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 loglevel=3 quiet\""
     fi
-    sed -i -E 's/#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y' /mnt/etc/default/grub
+    sed -i -E 's/#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /mnt/etc/default/grub
 else
     grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"resume=UUID=${swap_uuid} loglevel=3 quiet\""
 fi
