@@ -463,7 +463,6 @@ arch-chroot /mnt systemctl enable sshd
 if [[ ${encrypt_partitions} == true ]]; then
     arch-chroot /mnt ssh-keygen -A
     pacstrap -K /mnt mkinitcpio-systemd-extras dropbear
-    #sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
     if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_DROPBEAR_COMMAND=.*$' > /dev/null ); then
         echo 'SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --query --watch"' >> /mnt/etc/mkinitcpio.conf
     else
@@ -472,11 +471,11 @@ if [[ ${encrypt_partitions} == true ]]; then
     if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_DROPBEAR_AUTHORIZED_KEYS=.*$' > /dev/null ); then
         echo "SD_DROPBEAR_AUTHORIZED_KEYS=\"/home/${username}/.ssh/authorized_keys\"" >> /mnt/etc/mkinitcpio.conf
     else
-        sed -i -E 's/^SD_DROPBEAR_COMMAND=.*$/SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
+        sed -i -E 's/^SD_DROPBEAR_AUTHORIZED_KEYS=.*$/SD_DROPBEAR_AUTHORIZED_KEYS="/home/${username}/.ssh/authorized_keys"/' /mnt/etc/mkinitcpio.conf
     fi
 
     if [[ ${enable_wifi} == true ]]; then
-        pacstrap -K /mnt mkinitcpio-wifi broadcom-wl
+        pacstrap -K /mnt mkinitcpio-wifi
         wpa_passphrase "${wifi_name}" "${wifi_password}" > /mnt/etc/wpa_supplicant/initcpio.conf
         sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-dropbear sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     else
