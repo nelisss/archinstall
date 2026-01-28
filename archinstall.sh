@@ -441,7 +441,7 @@ arch-chroot /mnt systemctl enable systemd-networkd
 arch-chroot /mnt systemctl enable systemd-resolved
 
 # Hostname
-echo ${hostname} > /etc/hostname
+echo ${hostname} > /mnt/etc/hostname
 
 # User
 arch-chroot /mnt useradd -m ${username}
@@ -462,25 +462,25 @@ arch-chroot /mnt systemctl enable sshd
 # This requires a custom .iso with the AUR mkinicpio-systemd-extras package
 if [[ ${encrypt_partitions} == true ]]; then
     arch-chroot /mnt ssh-keygen -A
-    pacstrap -K /mnt mkinitcpio-systemd-extras tinyssh
+    pacstrap -K /mnt mkinitcpio-systemd-extras dropbear
     #sed -i -E 's/^FILES=\(\)/FILES=(\/usr\/lib\/udev\/rules.d\/75-net-desription.rules \/usr\/lib\/udev\/rules.d\/80-net-setup-link.rules \/usr\/lib\/systemd\/network\/99-default.link)/' /mnt/etc/mkinitcpio.conf
-    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_COMMAND=.*$' > /dev/null ); then
-        echo 'SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"' >> /mnt/etc/mkinitcpio.conf
+    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_DROPBEAR_COMMAND=.*$' > /dev/null ); then
+        echo 'SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --query --watch"' >> /mnt/etc/mkinitcpio.conf
     else
-        sed -i -E 's/^SD_TINYSSH_COMMAND=.*$/SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
+        sed -i -E 's/^SD_DROPBEAR_COMMAND=.*$/SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
     fi
-    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_TINYSSH_AUTHORIZED_KEYS=.*$' > /dev/null ); then
-        echo "SD_TINYSSH_AUTHORIZED_KEYS=\"/home/${username}/.ssh/authorized_keys\"" >> /mnt/etc/mkinitcpio.conf
+    if ( ! cat /mnt/etc/mkinitcpio.conf | grep -E '^SD_DROPBEAR_AUTHORIZED_KEYS=.*$' > /dev/null ); then
+        echo "SD_DROPBEAR_AUTHORIZED_KEYS=\"/home/${username}/.ssh/authorized_keys\"" >> /mnt/etc/mkinitcpio.conf
     else
-        sed -i -E 's/^SD_TINYSSH_COMMAND=.*$/SD_TINYSSH_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
+        sed -i -E 's/^SD_DROPBEAR_COMMAND=.*$/SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --query --watch"/' /mnt/etc/mkinitcpio.conf
     fi
 
     if [[ ${enable_wifi} == true ]]; then
         pacstrap -K /mnt mkinitcpio-wifi broadcom-wl
         wpa_passphrase "${wifi_name}" "${wifi_password}" > /mnt/etc/wpa_supplicant/initcpio.conf
-        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block wifi sd-network sd-dropbear sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     else
-        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-tinyssh sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
+        sed -i -E 's/^HOOKS=\(.*\)$/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-dropbear sd-encrypt filesystems resume fsck)/' /mnt/etc/mkinitcpio.conf
     fi
     echo "KEYMAP=us" > /mnt/etc/vconsole.conf
     arch-chroot /mnt mkinitcpio -P
@@ -495,7 +495,7 @@ if [[ ${encrypt_partitions} == true ]]; then
     root_uuid=$( blkid ${root_partition} -o value | head -1 )
     swap_open_uuid=$( blkid /dev/mapper/swap -o value | head -1 )
     if [[ ${enable_wifi} == true ]]; then
-        grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 ip=:::::wlan0:dhcp loglevel=3 quiet\""
+        grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rd.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 ip=:::::wlan0:dhcp loglevel=3 quiet\""
     else
         grub_uuid_line="GRUB_CMDLINE_LINUX_DEFAULT=\"rd.luks.name=${root_uuid}=root rl.luks.name=${swap_uuid}=swap resume=UUID=${swap_open_uuid} rootflags=x-systemd.device-timeout=0 loglevel=3 quiet\""
     fi
